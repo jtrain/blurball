@@ -175,8 +175,8 @@ def inference_video(
                 if vis_frame_dir is not None
                 else None
             )
-            vis_gt = cv2.imread(img_path)
-            vis_pred = cv2.imread(img_path)
+            vis_gt = cv2.imread(str(img_path))
+            vis_pred = cv2.imread(str(img_path))
 
             for cnt2, img_path2 in enumerate(result_dict.keys()):
                 if cnt2 != cnt:
