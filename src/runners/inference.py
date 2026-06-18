@@ -252,7 +252,8 @@ def inference_video(
         #     )
 
     if vis_frame_dir is not None:
-        video_path = "{}.mp4".format(vis_frame_dir)
+        stem_dir = Path(vis_frame_dir).parent
+        video_path = str(stem_dir / (stem_dir.name + ".mp4"))
         gen_video(video_path, vis_frame_dir, fps=25.0)
         print("Saving video at " + video_path)
 
@@ -273,8 +274,9 @@ def inference_video(
             {"Frame": x_fin, "X": x_fin, "Y": y_fin, "Visibility": vis_fin}
         )
     df["Frame"] = df.index
-    df.to_csv(osp.join(frame_dir, "traj.csv"), index=False)
-    print("Saving csv at " + osp.join(frame_dir, "traj.csv"))
+    traj_path = str(Path(frame_dir).parent / "traj.csv")
+    df.to_csv(traj_path, index=False)
+    print("Saving csv at " + traj_path)
 
     return {"t_elapsed": t_elapsed, "num_frames": num_frames}
 
@@ -299,8 +301,12 @@ class NewVideosInferenceRunner(BaseRunner):
         detector = build_detector(self._cfg, model=model)
         tracker = build_tracker(self._cfg)
 
-        # Generate frames directory for processing
-        frame_dir = process_video(self._input_vid_path)
+        # Create a per-video output folder next to the input file
+        stem_dir = self._input_vid_path.parent / self._input_vid_path.stem
+        mkdir_if_missing(str(stem_dir))
+
+        # Generate frames directory for processing inside the stem folder
+        frame_dir = process_video(self._input_vid_path, output_dir=str(stem_dir))
         print("Finished preprocess_video")
 
         t_elapsed_all = 0.0
@@ -308,10 +314,10 @@ class NewVideosInferenceRunner(BaseRunner):
 
         vis_frame_dir, vis_hm_dir, vis_traj_path = None, None, None
         if self._vis_result:
-            vis_frame_dir = osp.join(self._input_vid_path.parent, "frames")
+            vis_frame_dir = str(stem_dir / "vis")
             mkdir_if_missing(vis_frame_dir)
         if self._vis_hm:
-            vis_hm_dir = osp.join(self._input_vid_path.parent, "hm")
+            vis_hm_dir = str(stem_dir / "hm")
             mkdir_if_missing(vis_hm_dir)
         # if self._vis_traj:
         #     vis_traj_dir = osp.join(self._output_dir, "vis_traj")
