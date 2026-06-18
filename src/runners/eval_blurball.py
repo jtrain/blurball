@@ -183,7 +183,7 @@ def inference_video(
                     (255 * hm_results[img_path][0]["hm"]).astype(np.uint8),
                     cv2.COLOR_GRAY2RGB,
                 )
-                vis_hm_pred = cv2.resize(vis_hm_pred, (1280, 720))
+                vis_hm_pred = cv2.resize(vis_hm_pred, (vis_pred.shape[1], vis_pred.shape[0]))
                 vis_hm_pred = draw_frame(
                     vis_hm_pred,
                     center=Center(is_visible=visi_pred, x=x_pred, y=y_pred),

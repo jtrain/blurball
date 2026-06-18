@@ -71,28 +71,23 @@ def inference_video(
     cap.release()
     c = np.array([w / 2.0, h / 2.0], dtype=np.float32)
     s = max(h, w) * 1.0
+    inp_wh = (cfg["model"]["inp_width"], cfg["model"]["inp_height"])
+    trans_fwd = get_affine_transform(c, s, 0, list(inp_wh), inv=0)
     trans = np.stack(
         [
-            get_affine_transform(
-                c,
-                s,
-                0,
-                [cfg["model"]["inp_width"], cfg["model"]["inp_height"]],
-                inv=1,
-            )
+            get_affine_transform(c, s, 0, list(inp_wh), inv=1)
             for _ in range(3)
         ],
         axis=0,
     )
     trans = torch.tensor(trans)[None, :]
-    preprocess_frame = T.Compose(
-        [
-            T.ToPILImage(),
-            T.Resize((cfg["model"]["inp_height"], cfg["model"]["inp_width"])),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
+    _to_tensor = T.ToTensor()
+    _normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    def preprocess_frame(frame_bgr):
+        warped = cv2.warpAffine(frame_bgr, trans_fwd, inp_wh, flags=cv2.INTER_LINEAR)
+        rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
+        return _normalize(_to_tensor(rgb))
     step = cfg["detector"]["step"]
     det_results = defaultdict(list)
     hm_results = defaultdict(list)
@@ -212,7 +207,7 @@ def inference_video(
                         (255 * hm_results[img_path][0]["hm"]).astype(np.uint8),
                         cv2.COLOR_GRAY2RGB,
                     )
-                    vis_hm_pred = cv2.resize(vis_hm_pred, (1280, 720))
+                    vis_hm_pred = cv2.resize(vis_hm_pred, (w, h))
                     vis_hm_pred = draw_frame(
                         vis_hm_pred,
                         center=Center(is_visible=visi_pred, x=x_pred, y=y_pred),
