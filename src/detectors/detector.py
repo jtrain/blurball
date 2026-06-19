@@ -1,23 +1,20 @@
-import os.path as osp
 import logging
-from collections import defaultdict
-from hydra.core.hydra_config import HydraConfig
-import numpy as np
-from PIL import Image
-import cv2
+import os.path as osp
+
 import torch
+from hydra.core.hydra_config import HydraConfig
 from torch import nn
 
+from dataloaders import build_img_transforms
 from models import build_model
-from dataloaders import read_image, get_transform, build_img_transforms
-from utils.image import get_affine_transform, affine_transform
-from .postprocessor import TracknetV2Postprocessor
+
 from .deepball_postprocessor import DeepBallPostprocessor
+from .postprocessor import TracknetV2Postprocessor
 
 log = logging.getLogger(__name__)
 
 
-class TracknetV2Detector(object):
+class TracknetV2Detector:
     __postprocessor_factory = {
         "tracknetv2": TracknetV2Postprocessor,
         "deepball": DeepBallPostprocessor,
@@ -43,15 +40,22 @@ class TracknetV2Detector(object):
         ]:
             pass
         else:
-            raise ValueError("unknown model_name : {}".format(model_name))
+            raise ValueError(f"unknown model_name : {model_name}")
 
         _, self._transform = build_img_transforms(cfg)
 
         self._device = cfg["runner"]["device"]
-        if self._device != "cuda":
-            assert 0, "device=cpu not supported"
-        if not torch.cuda.is_available():
-            assert 0, "GPU NOT available"
+        # Support mps (Apple Silicon), cuda, and cpu
+        if self._device == "cuda" and not torch.cuda.is_available():
+            if torch.backends.mps.is_available():
+                log.warning("CUDA not available, falling back to MPS")
+                self._device = "mps"
+            else:
+                log.warning("CUDA not available, falling back to CPU")
+                self._device = "cpu"
+        elif self._device == "mps" and not torch.backends.mps.is_available():
+            log.warning("MPS not available, falling back to CPU")
+            self._device = "cpu"
         self._gpus = cfg["runner"]["gpus"]
 
         if model is None:
@@ -61,24 +65,23 @@ class TracknetV2Detector(object):
                 output_dir = HydraConfig.get().run.dir
                 model_path = osp.join(output_dir, "best_model.pth.tar")
                 log.info(
-                    "Checkpoint is not specified, so it is set as the best model in {}".format(
-                        output_dir
-                    )
+                    f"Checkpoint is not specified, so it is set as the best model in {output_dir}"
                 )
                 if not osp.exists(model_path):
-                    FileNotFoundError("{} not found".format(model_path))
-            checkpoint = torch.load(model_path, map_location="cuda:0")
+                    FileNotFoundError(f"{model_path} not found")
+            checkpoint = torch.load(model_path, map_location=self._device)
             self._model.load_state_dict(checkpoint["model_state_dict"])
             self._model = self._model.to(self._device)
-            self._model = nn.DataParallel(self._model, device_ids=self._gpus)
+            if self._device == "cuda":
+                self._model = nn.DataParallel(self._model, device_ids=self._gpus)
         else:
             self._model = model
 
         self._model.eval()
 
         postprocessor_name = cfg["detector"]["postprocessor"]["name"]
-        if not postprocessor_name in self.__postprocessor_factory.keys():
-            raise KeyError("invalid dataset: {}".format(postprocessor_name))
+        if postprocessor_name not in self.__postprocessor_factory.keys():
+            raise KeyError(f"invalid dataset: {postprocessor_name}")
         self._postprocessor = self.__postprocessor_factory[postprocessor_name](cfg)
 
     @property
