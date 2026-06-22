@@ -1,0 +1,45 @@
+name: cricket
+ext: '.jpg'
+root_dir: ${WASB_ROOT}/datasets/cricket
+csv_filename: 'Label.csv'
+visible_flags: [1,2]
+train:
+  matches: [ 'batting002_mkv_341',
+'batting003_webm_8653',
+'batting007_webm_1778',
+'batting005_mkv_9300',
+'batting007_webm_18316',
+'batting007_webm_5819',
+'batting007_webm_8074',
+'batting007_webm_741',
+'batting01_webm_5760',
+'batting005_mkv_10680',
+'batting007_webm_9985',
+'batting003_webm_2637',
+'batting003_webm_9016',
+'batting004_mkv_2571',
+'batting007_webm_7728',
+'batting007_webm_9081',
+'batting004_mkv_120',
+'batting007_webm_1294',
+'batting003_webm_7975',
+'batting003_webm_10579',
+'batting005_mkv_16200',
+'batting005_mkv_7080',
+'batting007_webm_4515',
+'batting002_mkv_5067',
+'batting003_webm_9481',
+'batting005_mkv_11640',
+'batting005_mkv_9960',
+'batting007_webm_6828',
+'batting005_mkv_12420',
+'batting005_mkv_3540',
+'batting005_mkv_8880',
+'batting007_webm_21449'
+]
+  num_clip_ratio: 1.0
+  refine_npz_path:
+test:
+  matches: [ 'batting002_mkv_5067', 'batting002_mkv_6617' ]
+  num_clip_ratio: 1.0
+  refine_npz_path:

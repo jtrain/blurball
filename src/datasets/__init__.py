@@ -1,18 +1,19 @@
 import logging
+
 from omegaconf import DictConfig
 
-from .tabletennis import TableTennis
-from .tabletennis import get_video_clips as get_tabletennis_clips
 from .badminton import Badminton
 from .badminton import get_video_clips as get_badminton_clips
+from .basketball import Basketball
+from .basketball import get_clips as get_basketball_clips
+from .soccer import Soccer
+from .soccer import get_clips as get_soccer_clips
+from .tabletennis import TableTennis
+from .tabletennis import get_video_clips as get_tabletennis_clips
 from .tennis import Tennis
 from .tennis import get_clips as get_tennis_clips
 from .volleyball import Volleyball
 from .volleyball import get_clips as get_volleyball_clips
-from .soccer import Soccer
-from .soccer import get_clips as get_soccer_clips
-from .basketball import Basketball
-from .basketball import get_clips as get_basketball_clips
 
 log = logging.getLogger(__name__)
 
@@ -24,11 +25,13 @@ __dataset_factory = {
     "basketball": Basketball,
     "tabletennis": TableTennis,
     "tabletennis_inference": TableTennis,
+    "cricket": Tennis,
 }
 
 __video_clip_factory = {
     "badminton": get_badminton_clips,
     "tennis": get_tennis_clips,
+    "cricket": get_tennis_clips,
     "volleyball": get_volleyball_clips,
     "soccer": get_soccer_clips,
     "basketball": get_basketball_clips,
@@ -41,8 +44,8 @@ def select_dataset(
     cfg: DictConfig,
 ):
     dataset_name = cfg["dataset"]["name"]
-    if not dataset_name in __dataset_factory.keys():
-        raise KeyError("unknown dataset_name: {}".format(dataset_name))
+    if dataset_name not in __dataset_factory.keys():
+        raise KeyError(f"unknown dataset_name: {dataset_name}")
     return __dataset_factory[dataset_name](cfg)
 
 
@@ -51,8 +54,8 @@ def select_video_clips(
     targets,
 ):
     dataset_name = cfg["dataset"]["name"]
-    if not dataset_name in __video_clip_factory.keys():
-        raise KeyError("invalid dataset: {}".format(dataset_name))
+    if dataset_name not in __video_clip_factory.keys():
+        raise KeyError(f"invalid dataset: {dataset_name}")
     if len(targets) == 0:
         raise ValueError("targets is empty")
     video_clips = {}

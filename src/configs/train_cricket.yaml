@@ -1,0 +1,27 @@
+WASB_ROOT: /Users/whit/company/mlresearch/blurball
+defaults:
+        - runner: train
+        - dataset: cricket
+        - model: blurball
+        - dataloader: line
+        - detector: blurball
+        - transform: default
+        - tracker: online
+        - _self_
+hydra:
+  run:
+    dir: ${WASB_ROOT}/outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+output_dir:
+seed: 1234
+model:
+  init_weights_path: ${WASB_ROOT}/models/blurball_best
+optimizer:
+  name: adam
+  learning_rate: 0.00005
+  weight_decay: 0
+  scheduler:
+    name: constant
+    factor: 1
+loss:
+  name:  heatmap
+  sub_name: mse
