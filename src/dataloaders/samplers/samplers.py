@@ -30,10 +30,13 @@ class RandomSampler(Sampler):
         ret = []
         if self._shuffle_batch:
             random.shuffle(self._idxs)
-        for i in range(len(self._idxs)//self._batch_size):
+        num_full = len(self._idxs)//self._batch_size
+        for i in range(num_full):
             ret.append( self._idxs[i*self._batch_size:(i+1)*self._batch_size])
         if (not self._drop_last) and (len(self._idxs)%self._batch_size !=0):
-            ret.append( self._idxs[(i+1)*self._batch_size:])
+            # use num_full (not i+1): the loop above may not have run for a
+            # clip smaller than one batch, leaving i undefined.
+            ret.append( self._idxs[num_full*self._batch_size:])
         return iter(ret)
 
     def __len__(self):
