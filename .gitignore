@@ -176,3 +176,8 @@ output/
 *.png
 !src/**/*.py
 .DS_Store
+*.swp
+bin/
+share/
+lib/
+pyvenv.cfg
