@@ -59,10 +59,17 @@ class Trainer(BaseRunner):
         set_seed(seed)
 
         self._device = cfg["runner"]["device"]
-        if self._device != "cuda":
-            assert 0, "device=cpu not supported"
-        if not torch.cuda.is_available():
-            assert 0, "GPU NOT available"
+        # Support mps (Apple Silicon), cuda, and cpu
+        if self._device == "cuda" and not torch.cuda.is_available():
+            if torch.backends.mps.is_available():
+                log.warning("CUDA not available, falling back to MPS")
+                self._device = "mps"
+            else:
+                log.warning("CUDA not available, falling back to CPU")
+                self._device = "cpu"
+        elif self._device == "mps" and not torch.backends.mps.is_available():
+            log.warning("MPS not available, falling back to CPU")
+            self._device = "cpu"
         self._gpus = self._cfg["runner"]["gpus"]
 
         self._max_epoch = cfg["runner"]["max_epochs"]
@@ -120,7 +127,8 @@ class Trainer(BaseRunner):
         )
 
         self._model = self._model.to(self._device)
-        self._model = nn.DataParallel(self._model, device_ids=self._gpus)
+        if self._device == "cuda":
+            self._model = nn.DataParallel(self._model, device_ids=self._gpus)
 
         self._loss_criteria = self._loss_criteria.to(self._device)
 
@@ -235,7 +243,11 @@ class Trainer(BaseRunner):
             else:
                 print("Not running inference")
 
-            model_state_dict = self._model.module.state_dict()
+            model_state_dict = (
+                self._model.module.state_dict()
+                if isinstance(self._model, nn.DataParallel)
+                else self._model.state_dict()
+            )
             save_checkpoint(
                 {
                     "model_state_dict": model_state_dict,

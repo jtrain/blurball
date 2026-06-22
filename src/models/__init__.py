@@ -90,8 +90,12 @@ def build_model(cfg):
             scale_factors=scale_factors,
         )
     if "init_weights_path" in cfg["model"].keys():
+        # map_location="cpu": load on CPU regardless of where the checkpoint was
+        # saved (e.g. CUDA); the runner moves the model to its device afterward.
         model.load_state_dict(
-            torch.load(cfg["model"]["init_weights_path"])["model_state_dict"]
+            torch.load(
+                cfg["model"]["init_weights_path"], map_location="cpu"
+            )["model_state_dict"]
         )
 
     return model

@@ -30,6 +30,7 @@ def train_epoch(
 
         optimizer.zero_grad()
 
+        imgs = imgs.to(device)
         preds = model(imgs)
         loss = loss_criterion(preds, hms)
         loss.backward()
