@@ -174,6 +174,10 @@ class ImageDataset(Dataset):
             imgs.append(img)
 
         # hms (targets)
+        # Get original image dimensions for coordinate normalization
+        img = read_image(img_paths[0])
+        img_h, img_w = np.asarray(img).shape[:2]
+
         for idx, (img_path, anno) in enumerate(zip(img_paths, annos)):
             binary = True
             if img_path in fp1_im_list:
@@ -185,7 +189,11 @@ class ImageDataset(Dataset):
                 length = anno["center"].l
                 angle = anno["center"].theta
 
-            xys.append([px, py])
+            # Normalize coordinates to [0, 1] range for weighting
+            # Original coordinates are in pixel space from the video
+            px_norm = px / img_w if img_w > 0 else 0.5
+            py_norm = py / img_h if img_h > 0 else 0.5
+            xys.append([px_norm, py_norm])
             visis.append(visi)
             out_w, out_h = self._output_wh
             for scale in self._out_scales:

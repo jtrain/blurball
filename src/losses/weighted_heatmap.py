@@ -72,9 +72,11 @@ class WeightedHeatmapLoss(nn.Module):
             if xy_gt is not None and self._spatial_weight > 0:
                 try:
                     # xy_gt shape: [batch_size, num_frames, 2]
-                    # Get y-coordinates (second element), normalize to [0, 1]
+                    # Coordinates are already normalized to [0, 1] by the dataloader
+                    # Get y-coordinates (second element)
                     y_coords = xy_gt[..., 1]  # shape [batch_size, num_frames]
-                    y_mean = y_coords.mean(dim=0)  # shape [num_frames]
+                    y_mean = y_coords.mean(dim=0)  # shape [num_frames], values in [0, 1]
+                    # Clamp is still safe as double-check, but shouldn't be needed
                     spatial_weight = y_mean.clamp(0, 1)
                 except Exception as e:
                     log.debug(f"Could not compute spatial weight: {e}")
