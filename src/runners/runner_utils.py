@@ -17,14 +17,24 @@ log = logging.getLogger(__name__)
 
 
 def train_epoch(
-    epoch, model, train_loader, loss_criterion, optimizer, device, current_step
+    epoch, model, train_loader, loss_criterion, optimizer, device, current_step, dataset_type="generic"
 ):
     batch_loss = AverageMeter()
     model.train()
     t_start = time.time()
-    for batch_idx, (imgs, hms) in enumerate(
-        tqdm(train_loader, desc="[(TRAIN) Epoch {}]".format(epoch))
-    ):
+    for batch_data in tqdm(train_loader, desc="[(TRAIN) Epoch {}]".format(epoch)):
+        # Handle both old format (imgs, hms) and new format (imgs, hms, xys, visis, num_frames)
+        if len(batch_data) == 2:
+            imgs, hms = batch_data
+            frame_metadata = None
+        else:
+            imgs, hms, xys, visis, num_frames_batch = batch_data
+            frame_metadata = {
+                "dataset_type": dataset_type,
+                "num_frames": num_frames_batch.to(device) if hasattr(num_frames_batch, 'to') else torch.tensor(num_frames_batch, device=device),
+                "xy_gt": xys.to(device) if hasattr(xys, 'to') else None,
+            }
+
         for scale, hm in hms.items():
             hms[scale] = hm.to(device)
 
@@ -32,7 +42,17 @@ def train_epoch(
 
         imgs = imgs.to(device)
         preds = model(imgs)
-        loss = loss_criterion(preds, hms)
+
+        # Pass frame_metadata if loss supports it
+        if frame_metadata is not None:
+            try:
+                loss = loss_criterion(preds, hms, frame_metadata)
+            except TypeError:
+                # Loss doesn't support frame_metadata, fall back to basic call
+                loss = loss_criterion(preds, hms)
+        else:
+            loss = loss_criterion(preds, hms)
+
         loss.backward()
         optimizer.step()
 

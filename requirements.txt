@@ -2,7 +2,7 @@ torch
 torchvision
 omegaconf
 opencv-python
-pillow
+pillow>=9.0,<10.1.0
 numpy
 pandas
 scikit-image

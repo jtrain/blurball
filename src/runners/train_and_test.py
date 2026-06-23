@@ -155,6 +155,9 @@ class Trainer(BaseRunner):
 
         self._best_model_name = cfg["runner"]["best_model_name"]
 
+        # Extract dataset type for weighted loss
+        self._dataset_type = cfg.get("dataset", {}).get("name", "generic")
+
     def run(self):
         if self._test_before_train:
             test_epoch(
@@ -193,6 +196,7 @@ class Trainer(BaseRunner):
                 self._optimizer,
                 self._device,
                 self._current_step,
+                self._dataset_type,
             )
 
             self._current_step = train_results["current_step"]

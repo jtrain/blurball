@@ -1,10 +1,12 @@
 from torch import nn
 
 from .heatmap import HeatmapLoss
+from .weighted_heatmap import WeightedHeatmapLoss
 from .segmentation import SegmentationLoss
 
 __factory = {
         'heatmap': HeatmapLoss,
+        'weighted_heatmap': WeightedHeatmapLoss,
         'segmentation': SegmentationLoss
         }
 

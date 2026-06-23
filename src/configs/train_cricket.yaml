@@ -23,5 +23,9 @@ optimizer:
     name: constant
     factor: 1
 loss:
-  name:  heatmap
+  name:  weighted_heatmap
   sub_name: mse
+  bounce_weight:
+    enabled: true
+    temporal_weight: 1.0
+    spatial_weight: 0.5

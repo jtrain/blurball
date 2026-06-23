@@ -246,8 +246,9 @@ class ImageDataset(Dataset):
         if self._model_name == "blurball":
             lens = torch.tensor(lens)
             angles = torch.tensor(angles)
+
         if self._is_train:
-            return imgs_t, hms_t
+            return imgs_t, hms_t, xys, visis, torch.tensor(len(img_paths), dtype=torch.long)
         else:
             return (
                 imgs_t,
