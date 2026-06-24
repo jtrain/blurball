@@ -24,6 +24,7 @@ from trackers import build_tracker
 from utils import mkdir_if_missing, draw_frame, gen_video, Center, Evaluator
 from utils.image import get_affine_transform, affine_transform
 from utils.preprocess import process_video
+from utils.roi import ROIConfig, ROICropper, ROIValidator, create_roi_from_dict
 
 from .base import BaseRunner
 
@@ -48,6 +49,7 @@ def inference_video(
     vis_hm_dir=None,
     vis_traj_path=None,
     dist_thresh=10.0,
+    roi=None,
 ):
     frames_in = detector.frames_in
     frames_out = detector.frames_out
@@ -69,25 +71,58 @@ def inference_video(
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
-    c = np.array([w / 2.0, h / 2.0], dtype=np.float32)
-    s = max(h, w) * 1.0
+
+    # Validate and setup ROI if provided
+    if roi is not None:
+        is_valid, msg = ROIValidator.validate(roi, w, h)
+        print(f"ROI Validation: {msg}")
+        if not is_valid:
+            print(f"Warning: {msg}")
+            print("Falling back to affine transform (no ROI)")
+            roi = None
+
     inp_wh = (cfg["model"]["inp_width"], cfg["model"]["inp_height"])
-    trans_fwd = get_affine_transform(c, s, 0, list(inp_wh), inv=0)
-    trans = np.stack(
-        [
-            get_affine_transform(c, s, 0, list(inp_wh), inv=1)
-            for _ in range(3)
-        ],
-        axis=0,
-    )
-    trans = torch.tensor(trans)[None, :]
     _to_tensor = T.ToTensor()
     _normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    def preprocess_frame(frame_bgr):
-        warped = cv2.warpAffine(frame_bgr, trans_fwd, inp_wh, flags=cv2.INTER_LINEAR)
-        rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
-        return _normalize(_to_tensor(rgb))
+    # Setup preprocessing function (ROI or affine)
+    if roi is not None:
+        print(f"Using ROI: {roi.width}x{roi.height} -> {inp_wh}")
+
+        # Create identity transformation for ROI (crop + resize, no affine)
+        trans = np.zeros((3, 2, 3), dtype=np.float32)
+        trans[:, 0, 0] = 1.0
+        trans[:, 1, 1] = 1.0
+        trans = torch.tensor(trans)[None, :]
+
+        def preprocess_frame(frame_bgr):
+            # Crop and resize to model input dimensions
+            cropped = ROICropper.crop_frame(frame_bgr, roi)
+            resized = cv2.resize(
+                cropped,
+                inp_wh,
+                interpolation=cv2.INTER_LINEAR
+            )
+            rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            return _normalize(_to_tensor(rgb))
+    else:
+        print(f"Using affine transform to {inp_wh}")
+        c = np.array([w / 2.0, h / 2.0], dtype=np.float32)
+        s = max(h, w) * 1.0
+        trans_fwd = get_affine_transform(c, s, 0, list(inp_wh), inv=0)
+        trans = np.stack(
+            [
+                get_affine_transform(c, s, 0, list(inp_wh), inv=1)
+                for _ in range(3)
+            ],
+            axis=0,
+        )
+        trans = torch.tensor(trans)[None, :]
+
+        def preprocess_frame(frame_bgr):
+            warped = cv2.warpAffine(frame_bgr, trans_fwd, inp_wh, flags=cv2.INTER_LINEAR)
+            rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
+            return _normalize(_to_tensor(rgb))
     step = cfg["detector"]["step"]
     det_results = defaultdict(list)
     hm_results = defaultdict(list)
@@ -294,6 +329,11 @@ class NewVideosInferenceRunner(BaseRunner):
         self._vis_traj = cfg["runner"]["vis_traj"]
         self._input_vid_path = Path(cfg["input_vid"])
 
+        # Parse ROI config if provided
+        self._roi = None
+        if "roi" in cfg and cfg["roi"].get("enabled", False):
+            self._roi = create_roi_from_dict(cfg["roi"])
+
     def run(self, model=None, model_dir=None):
         return self._run_model(model=model)
 
@@ -332,6 +372,7 @@ class NewVideosInferenceRunner(BaseRunner):
             self._cfg,
             vis_frame_dir=vis_frame_dir,
             vis_hm_dir=vis_hm_dir,
+            roi=self._roi,
         )
 
         t_elapsed_all += tmp["t_elapsed"]

@@ -16,3 +16,11 @@ from .vis import draw_frame, gen_video
 from .evaluator import Evaluator
 from .blur_evaluator import BlurEvaluator
 from .preprocess import process_video
+from .roi import (
+    ROIConfig,
+    ROICropper,
+    ROIValidator,
+    ROIVisualizer,
+    preview_roi_on_video,
+    create_roi_from_dict,
+)
