@@ -6,9 +6,11 @@ Allows extracting a portrait-oriented crop from videos to focus on relevant area
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 import cv2
 import numpy as np
+from utils.image import get_affine_transform
 
 
 @dataclass
@@ -26,6 +28,135 @@ class ROIConfig:
     # Model input dimensions (what to rescale to)
     model_inp_width: int = 512
     model_inp_height: int = 288
+
+
+class ROICropper:
+    """Handles ROI cropping and resizing."""
+
+    @staticmethod
+    def get_crop_box(
+        roi: ROIConfig, video_width: int, video_height: int
+    ) -> tuple[int, int, int, int]:
+        """
+        Get crop box coordinates (x1, y1, x2, y2) in pixel space.
+        """
+        x1 = int(roi.center_x * video_width - roi.width / 2)
+        y1 = int(roi.center_y * video_height - roi.height / 2)
+        x2 = x1 + roi.width
+        y2 = y1 + roi.height
+
+        # Clamp to frame boundaries
+        x1 = max(0, min(x1, video_width - 1))
+        y1 = max(0, min(y1, video_height - 1))
+        x2 = max(x1 + 1, min(x2, video_width))
+        y2 = max(y1 + 1, min(y2, video_height))
+
+        return x1, y1, x2, y2
+
+    @staticmethod
+    def crop_frame(frame: np.ndarray, roi: ROIConfig) -> np.ndarray:
+        """Crop frame to ROI region."""
+        h, w = frame.shape[:2]
+        x1, y1, x2, y2 = ROICropper.get_crop_box(roi, w, h)
+        return frame[y1:y2, x1:x2]
+
+    @staticmethod
+    def crop_and_resize(frame: np.ndarray, roi: ROIConfig) -> np.ndarray:
+        """Crop frame to ROI and resize to model input dimensions."""
+        cropped = ROICropper.crop_frame(frame, roi)
+        # Resize to model dimensions
+        resized = cv2.resize(
+            cropped,
+            (roi.model_inp_width, roi.model_inp_height),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        return resized
+
+
+class ROITransform:
+    """Compute affine transformations for ROI crops."""
+
+    @staticmethod
+    def get_roi_affine_matrices(
+        roi: "ROIConfig", video_width: int, video_height: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Compute forward and inverse affine transforms for ROI.
+
+        Returns:
+            (trans_forward, trans_inverse) - both are 2x3 matrices
+            forward: global -> model input space
+            inverse: model input space -> global
+        """
+        # Get the crop box in global coordinates
+        x1, y1, x2, y2 = ROICropper.get_crop_box(roi, video_width, video_height)
+        roi_width_actual = x2 - x1
+        roi_height_actual = y2 - y1
+
+        # Forward transform: global -> ROI crop -> model input
+        # This is a composition of: translate to crop origin, scale to model size
+        trans_forward = np.array([
+            [roi.model_inp_width / roi_width_actual, 0, -x1 * roi.model_inp_width / roi_width_actual],
+            [0, roi.model_inp_height / roi_height_actual, -y1 * roi.model_inp_height / roi_height_actual]
+        ], dtype=np.float32)
+
+        # Inverse transform: model input -> ROI crop -> global
+        # Scale model input back to ROI size, then translate to global position
+        trans_inverse = np.array([
+            [roi_width_actual / roi.model_inp_width, 0, x1],
+            [0, roi_height_actual / roi.model_inp_height, y1]
+        ], dtype=np.float32)
+
+        return trans_forward, trans_inverse
+
+    @staticmethod
+    def create_transform_matrices_for_inference(
+        roi: Optional["ROIConfig"],
+        video_width: int,
+        video_height: int,
+        model_inp_width: int,
+        model_inp_height: int,
+        batch_size: int = 1,
+        num_scales: int = 3,
+    ) -> np.ndarray:
+        """
+        Create transform matrices for inference (inverse transforms).
+
+        This unifies ROI and non-ROI preprocessing by always computing proper
+        affine matrices that transform detections back to global coordinates.
+
+        Args:
+            roi: ROI configuration, or None for full-frame affine
+            video_width: Original video width
+            video_height: Original video height
+            model_inp_width: Model input width
+            model_inp_height: Model input height
+            batch_size: Batch size
+            num_scales: Number of scales in multi-scale output
+
+        Returns:
+            Transform matrices shaped (batch_size, num_scales, 2, 3)
+            for applying in postprocessor
+        """
+        if roi is not None:
+            # ROI case: use ROI transforms
+            _, trans_inverse = ROITransform.get_roi_affine_matrices(
+                roi, video_width, video_height
+            )
+            # Replicate across batch and scales
+            trans = np.stack([trans_inverse for _ in range(num_scales)], axis=0)
+            trans = np.stack([trans for _ in range(batch_size)], axis=0)
+        else:
+            # Non-ROI case: use center-based affine like before
+            c = np.array([video_width / 2.0, video_height / 2.0], dtype=np.float32)
+            s = max(video_height, video_width) * 1.0
+            trans = np.stack([
+                get_affine_transform(c, s, 0, [model_inp_width, model_inp_height], inv=1)
+                for _ in range(num_scales)
+            ], axis=0)
+            trans = np.stack([trans for _ in range(batch_size)], axis=0)
+
+        return trans
 
 
 class ROIValidator:
@@ -120,49 +251,6 @@ class ROIValidator:
             model_inp_width=model_inp_width,
             model_inp_height=model_inp_height,
         )
-
-
-class ROICropper:
-    """Handles ROI cropping and resizing."""
-
-    @staticmethod
-    def get_crop_box(
-        roi: ROIConfig, video_width: int, video_height: int
-    ) -> tuple[int, int, int, int]:
-        """
-        Get crop box coordinates (x1, y1, x2, y2) in pixel space.
-        """
-        x1 = int(roi.center_x * video_width - roi.width / 2)
-        y1 = int(roi.center_y * video_height - roi.height / 2)
-        x2 = x1 + roi.width
-        y2 = y1 + roi.height
-
-        # Clamp to frame boundaries
-        x1 = max(0, min(x1, video_width - 1))
-        y1 = max(0, min(y1, video_height - 1))
-        x2 = max(x1 + 1, min(x2, video_width))
-        y2 = max(y1 + 1, min(y2, video_height))
-
-        return x1, y1, x2, y2
-
-    @staticmethod
-    def crop_frame(frame: np.ndarray, roi: ROIConfig) -> np.ndarray:
-        """Crop frame to ROI region."""
-        h, w = frame.shape[:2]
-        x1, y1, x2, y2 = ROICropper.get_crop_box(roi, w, h)
-        return frame[y1:y2, x1:x2]
-
-    @staticmethod
-    def crop_and_resize(frame: np.ndarray, roi: ROIConfig) -> np.ndarray:
-        """Crop frame to ROI and resize to model input dimensions."""
-        cropped = ROICropper.crop_frame(frame, roi)
-        # Resize to model dimensions
-        resized = cv2.resize(
-            cropped,
-            (roi.model_inp_width, roi.model_inp_height),
-            interpolation=cv2.INTER_LINEAR,
-        )
-        return resized
 
 
 class ROIVisualizer:

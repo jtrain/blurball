@@ -24,7 +24,7 @@ from trackers import build_tracker
 from utils import mkdir_if_missing, draw_frame, gen_video, Center, Evaluator
 from utils.image import get_affine_transform, affine_transform
 from utils.preprocess import process_video
-from utils.roi import ROIConfig, ROICropper, ROIValidator, create_roi_from_dict
+from utils.roi import ROIConfig, ROICropper, ROIValidator, ROITransform, create_roi_from_dict
 
 from .base import BaseRunner
 
@@ -85,15 +85,9 @@ def inference_video(
     _to_tensor = T.ToTensor()
     _normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    # Setup preprocessing function (ROI or affine)
+    # Setup preprocessing function and transform matrices
     if roi is not None:
         print(f"Using ROI: {roi.width}x{roi.height} -> {inp_wh}")
-
-        # Create identity transformation for ROI (crop + resize, no affine)
-        trans = np.zeros((3, 2, 3), dtype=np.float32)
-        trans[:, 0, 0] = 1.0
-        trans[:, 1, 1] = 1.0
-        trans = torch.tensor(trans)[None, :]
 
         def preprocess_frame(frame_bgr):
             # Crop and resize to model input dimensions
@@ -110,19 +104,24 @@ def inference_video(
         c = np.array([w / 2.0, h / 2.0], dtype=np.float32)
         s = max(h, w) * 1.0
         trans_fwd = get_affine_transform(c, s, 0, list(inp_wh), inv=0)
-        trans = np.stack(
-            [
-                get_affine_transform(c, s, 0, list(inp_wh), inv=1)
-                for _ in range(3)
-            ],
-            axis=0,
-        )
-        trans = torch.tensor(trans)[None, :]
 
         def preprocess_frame(frame_bgr):
             warped = cv2.warpAffine(frame_bgr, trans_fwd, inp_wh, flags=cv2.INTER_LINEAR)
             rgb = cv2.cvtColor(warped, cv2.COLOR_BGR2RGB)
             return _normalize(_to_tensor(rgb))
+
+    # Create unified transform matrices for postprocessor
+    # This ensures detections are always transformed back to global coordinates
+    trans = ROITransform.create_transform_matrices_for_inference(
+        roi=roi,
+        video_width=w,
+        video_height=h,
+        model_inp_width=inp_wh[0],
+        model_inp_height=inp_wh[1],
+        batch_size=1,
+        num_scales=len(cfg["detector"]["postprocessor"]["scales"]),
+    )
+    trans = torch.tensor(trans)
     step = cfg["detector"]["step"]
     det_results = defaultdict(list)
     hm_results = defaultdict(list)
